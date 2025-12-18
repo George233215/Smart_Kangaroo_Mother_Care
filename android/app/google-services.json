@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "953406452006",
+    "project_id": "smartkmcapp",
+    "storage_bucket": "smartkmcapp.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:953406452006:android:582a89df8ac2fbf3d591e7",
+        "android_client_info": {
+          "package_name": "com.example.smart_kangaroo_mother_care"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCsUebg_FhlO6RE7peMLwlUmDLg32GOhK0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

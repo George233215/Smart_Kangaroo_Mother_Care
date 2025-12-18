@@ -1,0 +1,41 @@
+name: smart_kangaroo_mother_care
+description: A Smart Kangaroo Mother Care monitoring app.
+publish_to: 'none' # Remove this line if you wish to publish to pub.dev
+
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.2
+  provider: ^6.0.5
+  firebase_core: ^2.25.4
+  firebase_auth: ^4.17.4
+  cloud_firestore: ^4.15.4
+  flutter_blue_plus: ^1.30.0
+  firebase_database: ^10.4.5
+  sqflite: ^2.3.0
+  path: ^1.8.3
+  uuid: ^4.2.0
+  intl: ^0.20.2
+  flutter_local_notifications: ^17.1.0
+  timezone: ^0.9.2
+  permission_handler: ^11.1.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^2.0.0
+
+flutter:
+  uses-material-design: true
+  # To add custom fonts to your application, add an assets section, like this:
+  fonts:
+    - family: Inter
+      fonts:
+        - asset: fonts/Inter-Regular.ttf
+        - asset: fonts/Inter-Bold.ttf
+          weight: 700
