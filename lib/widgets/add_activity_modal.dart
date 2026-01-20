@@ -1,5 +1,3 @@
-// lib/widgets/add_activity_modal.dart
-
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -12,9 +10,9 @@ enum ActivityType { sleep, feeding }
 
 class AddActivityModal extends StatefulWidget {
   final ActivityType type;
-  final String? currentSleepEntryId; // Only for ending an ongoing session
-  final SleepData? sleepToEdit; // Pass existing sleep entry for editing
-  final FeedingData? feedingToEdit; // Pass existing feeding entry for editing
+  final String? currentSleepEntryId;
+  final SleepData? sleepToEdit;
+  final FeedingData? feedingToEdit;
 
   const AddActivityModal({
     super.key,
@@ -28,13 +26,16 @@ class AddActivityModal extends StatefulWidget {
   State<AddActivityModal> createState() => _AddActivityModalState();
 }
 
-class _AddActivityModalState extends State<AddActivityModal> {
-  // For Sleep
+class _AddActivityModalState extends State<AddActivityModal> with SingleTickerProviderStateMixin {
+  late AnimationController _animationController;
+  late Animation<Offset> _slideAnimation;
+
+  // Sleep fields
   late DateTime _sleepStartTime;
   late DateTime _sleepEndTime;
   late TextEditingController _sleepNotesController;
 
-  // For Feeding
+  // Feeding fields
   late DateTime _feedingTime;
   late TextEditingController _amountController;
   late TextEditingController _durationController;
@@ -48,20 +49,27 @@ class _AddActivityModalState extends State<AddActivityModal> {
   void initState() {
     super.initState();
 
+    _animationController = AnimationController(
+      duration: const Duration(milliseconds: 300),
+      vsync: this,
+    );
+
+    _slideAnimation = Tween<Offset>(
+      begin: const Offset(0, 1),
+      end: Offset.zero,
+    ).animate(
+      CurvedAnimation(parent: _animationController, curve: Curves.easeOut),
+    );
+
+    _animationController.forward();
+
     _sleepNotesController = TextEditingController(text: widget.sleepToEdit?.notes ?? '');
     _amountController = TextEditingController(text: widget.feedingToEdit?.amountMl.toString() ?? '');
     _durationController = TextEditingController(text: widget.feedingToEdit?.durationMinutes.toString() ?? '10');
 
-    // Initialize Sleep times
-    // If ending an ongoing session, start time is irrelevant, end time is now.
     _sleepStartTime = widget.sleepToEdit?.startTime.toDate() ?? DateTime.now();
     _sleepEndTime = widget.sleepToEdit?.endTime?.toDate() ?? DateTime.now();
 
-    // If starting a NEW ongoing session, we only call this modal from the dashboard with currentSleepEntryId: null
-    // If ending an ONGOING session, currentSleepEntryId is NOT null, and we only use _sleepEndTime.
-    // If editing HISTORY, sleepToEdit is NOT null, and we use both times.
-
-    // Initialize Feeding details
     _feedingTime = widget.feedingToEdit?.timestamp.toDate() ?? DateTime.now();
     _selectedFeedingType = widget.feedingToEdit?.type ?? 'Bottle';
     _selectedSide = widget.feedingToEdit?.side;
@@ -69,28 +77,50 @@ class _AddActivityModalState extends State<AddActivityModal> {
 
   @override
   void dispose() {
+    _animationController.dispose();
     _sleepNotesController.dispose();
     _amountController.dispose();
     _durationController.dispose();
     super.dispose();
   }
 
-  // --- Date and Time Pickers ---
   Future<void> _selectDateTime(BuildContext context, DateTime initialDate, Function(DateTime) onDateTimeSelected) async {
     final DateTime? pickedDate = await showDatePicker(
       context: context,
       initialDate: initialDate,
       firstDate: DateTime(2023),
-      // Allow slightly future time for logging an event that is just starting (e.g. End Sleep Now)
       lastDate: DateTime.now().add(const Duration(minutes: 1)),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: ColorScheme.light(
+              primary: widget.type == ActivityType.feeding ? Colors.purple[400]! : Colors.indigo[400]!,
+              onPrimary: Colors.white,
+            ),
+          ),
+          child: child!,
+        );
+      },
     );
-    if (pickedDate != null) {
+
+    if (pickedDate != null && context.mounted) {
       final TimeOfDay? pickedTime = await showTimePicker(
         context: context,
         initialTime: TimeOfDay.fromDateTime(initialDate),
+        builder: (context, child) {
+          return Theme(
+            data: Theme.of(context).copyWith(
+              colorScheme: ColorScheme.light(
+                primary: widget.type == ActivityType.feeding ? Colors.purple[400]! : Colors.indigo[400]!,
+                onPrimary: Colors.white,
+              ),
+            ),
+            child: child!,
+          );
+        },
       );
+
       if (pickedTime != null) {
-        // Construct the new DateTime object
         final newDateTime = DateTime(
           pickedDate.year,
           pickedDate.month,
@@ -98,8 +128,6 @@ class _AddActivityModalState extends State<AddActivityModal> {
           pickedTime.hour,
           pickedTime.minute,
         );
-
-        // Ensure the callback is called within setState
         setState(() {
           onDateTimeSelected(newDateTime);
         });
@@ -107,27 +135,25 @@ class _AddActivityModalState extends State<AddActivityModal> {
     }
   }
 
-
-  // --- Handlers for saving data ---
   Future<void> _saveSleep() async {
     setState(() => _isSaving = true);
     final dataService = Provider.of<DataService>(context, listen: false);
 
     try {
-      // 1. Logic for Ending an ongoing session (Called from Dashboard when a session is active)
       if (widget.currentSleepEntryId != null) {
-        // Validate end time is after the start time (Start time is fetched from the DB inside endSleepEntry)
-        // We only pass the end time here.
         await dataService.endSleepEntry(
           widget.currentSleepEntryId!,
           Timestamp.fromDate(_sleepEndTime),
         );
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Sleep session ended!')));
-
-        // 2. Logic for Editing a historical session (Called from History screens)
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            _buildSuccessSnackBar('Sleep session ended!'),
+          );
+        }
       } else if (widget.sleepToEdit != null) {
-        if (_sleepEndTime.isBefore(_sleepStartTime)) throw Exception("End time cannot be before start time.");
-
+        if (_sleepEndTime.isBefore(_sleepStartTime)) {
+          throw Exception("End time cannot be before start time.");
+        }
         final updatedSleep = SleepData(
           id: widget.sleepToEdit!.id,
           startTime: Timestamp.fromDate(_sleepStartTime),
@@ -135,30 +161,39 @@ class _AddActivityModalState extends State<AddActivityModal> {
           notes: _sleepNotesController.text,
         );
         await dataService.updateSleepEntry(updatedSleep);
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Sleep session updated!')));
-
-        // 3. Logic for Logging a new historical session (Called from History screens to log a completed nap)
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            _buildSuccessSnackBar('Sleep session updated!'),
+          );
+        }
       } else {
-        if (_sleepEndTime.isBefore(_sleepStartTime)) throw Exception("End time cannot be before start time.");
-
+        if (_sleepEndTime.isBefore(_sleepStartTime)) {
+          throw Exception("End time cannot be before start time.");
+        }
         final newSleep = SleepData(
           id: _uuid.v4(),
           startTime: Timestamp.fromDate(_sleepStartTime),
           endTime: Timestamp.fromDate(_sleepEndTime),
           notes: _sleepNotesController.text,
         );
-        // Note: For a new log from history, we use the addSleepEntry, which accepts a fully formed SleepData object.
         await dataService.addSleepEntry(newSleep);
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Sleep session logged!')));
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            _buildSuccessSnackBar('Sleep session logged!'),
+          );
+        }
       }
-
-      Navigator.of(context).pop(true); // Pop with true to indicate success
+      if (mounted) Navigator.of(context).pop(true);
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: ${e.toString().replaceAll('Exception: ', '')}')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          _buildErrorSnackBar(e.toString().replaceAll('Exception: ', '')),
+        );
+      }
     } finally {
-      setState(() => _isSaving = false);
+      if (mounted) {
+        setState(() => _isSaving = false);
+      }
     }
   }
 
@@ -171,7 +206,11 @@ class _AddActivityModalState extends State<AddActivityModal> {
 
     if (duration <= 0 && amount <= 0 && _selectedFeedingType != 'Breast') {
       setState(() => _isSaving = false);
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please enter duration or amount.')));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          _buildErrorSnackBar('Please enter duration or amount.'),
+        );
+      }
       return;
     }
 
@@ -186,147 +225,501 @@ class _AddActivityModalState extends State<AddActivityModal> {
       );
 
       if (widget.feedingToEdit != null) {
-        // Update existing entry
         await dataService.updateFeedingEntry(feedingData);
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Feeding updated!')));
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            _buildSuccessSnackBar('Feeding updated!'),
+          );
+        }
       } else {
-        // Add new entry
         await dataService.addFeedingEntry(feedingData);
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Feeding logged!')));
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            _buildSuccessSnackBar('Feeding logged!'),
+          );
+        }
       }
-
-      Navigator.of(context).pop(true);
+      if (mounted) Navigator.of(context).pop(true);
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error logging feeding: ${e.toString()}')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          _buildErrorSnackBar('Error: ${e.toString()}'),
+        );
+      }
     } finally {
-      setState(() => _isSaving = false);
+      if (mounted) {
+        setState(() => _isSaving = false);
+      }
     }
   }
 
-  // Helper to format DateTime for display
   String _formatDateTime(DateTime dt) {
-    // A simple, clear format for display in the ListTile subtitle
-    final date = '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
+    final months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    final month = months[dt.month - 1];
+    final day = dt.day;
     final time = '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
-    return '$date $time';
+    return '$month $day, $time';
+  }
+
+  SnackBar _buildSuccessSnackBar(String message) {
+    return SnackBar(
+      content: Row(
+        children: [
+          const Icon(Icons.check_circle, color: Colors.white),
+          const SizedBox(width: 12),
+          Text(message),
+        ],
+      ),
+      backgroundColor: Colors.green,
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    );
+  }
+
+  SnackBar _buildErrorSnackBar(String message) {
+    return SnackBar(
+      content: Row(
+        children: [
+          const Icon(Icons.error_outline, color: Colors.white),
+          const SizedBox(width: 12),
+          Expanded(child: Text(message)),
+        ],
+      ),
+      backgroundColor: Colors.red[400],
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     bool isEditing = widget.sleepToEdit != null || widget.feedingToEdit != null;
     bool isEndingSleep = widget.currentSleepEntryId != null;
+    final color = widget.type == ActivityType.feeding ? Colors.purple[400]! : Colors.indigo[400]!;
 
-    return Padding(
-      padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).viewInsets.bottom,
-        left: 16.0, right: 16.0, top: 16.0,
+    return SlideTransition(
+      position: _slideAnimation,
+      child: Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.only(
+            topLeft: Radius.circular(30),
+            topRight: Radius.circular(30),
+          ),
+        ),
+        child: SafeArea(
+          child: Padding(
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.of(context).viewInsets.bottom,
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _buildHeader(color, isEndingSleep, isEditing),
+                  Padding(
+                    padding: const EdgeInsets.all(24.0),
+                    child: widget.type == ActivityType.sleep
+                        ? _buildSleepForm(color, isEndingSleep)
+                        : _buildFeedingForm(color),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
       ),
-      child: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
+    );
+  }
+
+  Widget _buildHeader(Color color, bool isEndingSleep, bool isEditing) {
+    final icon = widget.type == ActivityType.feeding ? Icons.local_dining : Icons.king_bed;
+    final title = widget.type == ActivityType.sleep
+        ? (isEndingSleep ? 'End Sleep Session' : (isEditing ? 'Edit Sleep' : 'Log Sleep Session'))
+        : (isEditing ? 'Edit Feeding' : 'Log Feeding');
+
+    // Get lighter shade for gradient
+    final lightColor = Color.lerp(color, Colors.white, 0.3)!;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [color, lightColor],
+        ),
+        borderRadius: const BorderRadius.only(
+          topLeft: Radius.circular(30),
+          topRight: Radius.circular(30),
+        ),
+      ),
+      child: Column(
+        children: [
+          Container(
+            width: 40,
+            height: 4,
+            margin: const EdgeInsets.only(bottom: 20),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.3),
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Icon(icon, color: Colors.white, size: 36),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSleepForm(Color color, bool isEndingSleep) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (!isEndingSleep) ...[
+          _buildSectionTitle('Start Time'),
+          const SizedBox(height: 12),
+          _buildTimeSelector(
+            context,
+            _formatDateTime(_sleepStartTime),
+            Icons.wb_sunny,
+            color,
+                () => _selectDateTime(context, _sleepStartTime, (dt) => _sleepStartTime = dt),
+          ),
+          const SizedBox(height: 24),
+        ],
+        _buildSectionTitle('End Time'),
+        const SizedBox(height: 12),
+        _buildTimeSelector(
+          context,
+          _formatDateTime(_sleepEndTime),
+          Icons.nightlight_round,
+          color,
+              () => _selectDateTime(context, _sleepEndTime, (dt) => _sleepEndTime = dt),
+        ),
+        if (!isEndingSleep) ...[
+          const SizedBox(height: 24),
+          _buildSectionTitle('Notes (Optional)'),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.grey[50],
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: Colors.grey[200]!, width: 1),
+            ),
+            child: TextField(
+              controller: _sleepNotesController,
+              maxLines: 3,
+              decoration: InputDecoration(
+                border: InputBorder.none,
+                hintText: 'Add any observations...',
+                hintStyle: TextStyle(color: Colors.grey[400]),
+              ),
+            ),
+          ),
+        ],
+        const SizedBox(height: 32),
+        _buildSubmitButton(
+          isEndingSleep
+              ? 'End Sleep Session'
+              : (widget.sleepToEdit != null ? 'Update Sleep' : 'Save Sleep'),
+          color,
+          Icons.check_circle,
+          _saveSleep,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildFeedingForm(Color color) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildSectionTitle('Feeding Time'),
+        const SizedBox(height: 12),
+        _buildTimeSelector(
+          context,
+          _formatDateTime(_feedingTime),
+          Icons.access_time,
+          color,
+              () => _selectDateTime(context, _feedingTime, (dt) => _feedingTime = dt),
+        ),
+        const SizedBox(height: 24),
+        _buildSectionTitle('Feeding Type'),
+        const SizedBox(height: 12),
+        _buildFeedingTypeSelector(),
+        if (_selectedFeedingType == 'Breast') ...[
+          const SizedBox(height: 24),
+          _buildSectionTitle('Side'),
+          const SizedBox(height: 12),
+          _buildSideSelector(),
+        ],
+        const SizedBox(height: 24),
+        Row(
           children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildSectionTitle('Amount'),
+                  const SizedBox(height: 12),
+                  _buildTextField(
+                    _amountController,
+                    'ml',
+                    Icons.water_drop,
+                    Colors.blue,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildSectionTitle('Duration'),
+                  const SizedBox(height: 12),
+                  _buildTextField(
+                    _durationController,
+                    'minutes',
+                    Icons.timer,
+                    Colors.orange,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 32),
+        _buildSubmitButton(
+          widget.feedingToEdit != null ? 'Update Feeding' : 'Save Feeding',
+          color,
+          Icons.check_circle,
+          _saveFeeding,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSectionTitle(String title) {
+    return Text(
+      title,
+      style: const TextStyle(
+        fontSize: 15,
+        fontWeight: FontWeight.bold,
+        color: Colors.black87,
+      ),
+    );
+  }
+
+  Widget _buildTimeSelector(BuildContext context, String time, IconData icon, Color color, VoidCallback onTap) {
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: color.withOpacity(0.3), width: 1),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, color: color, size: 24),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Text(
+                time,
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: color,
+                ),
+              ),
+            ),
+            Icon(Icons.edit, color: color, size: 20),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFeedingTypeSelector() {
+    final types = [
+      {'name': 'Bottle', 'icon': Icons.baby_changing_station},
+      {'name': 'Breast', 'icon': Icons.child_care},
+      {'name': 'Solid', 'icon': Icons.restaurant},
+    ];
+
+    return Row(
+      children: types.map((type) {
+        final isSelected = _selectedFeedingType == type['name'];
+        return Expanded(
+          child: GestureDetector(
+            onTap: () => setState(() => _selectedFeedingType = type['name'] as String),
+            child: Container(
+              margin: const EdgeInsets.only(right: 8),
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              decoration: BoxDecoration(
+                gradient: isSelected
+                    ? LinearGradient(colors: [Colors.purple[400]!, Colors.purple[300]!])
+                    : null,
+                color: isSelected ? null : Colors.grey[100],
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: isSelected ? Colors.purple[400]! : Colors.grey[200]!,
+                  width: isSelected ? 2 : 1,
+                ),
+              ),
+              child: Column(
+                children: [
+                  Icon(
+                    type['icon'] as IconData,
+                    color: isSelected ? Colors.white : Colors.grey[600],
+                    size: 24,
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    type['name'] as String,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: isSelected ? Colors.white : Colors.grey[700],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _buildSideSelector() {
+    return Row(
+      children: ['Left', 'Right'].map((side) {
+        final isSelected = _selectedSide == side;
+        return Expanded(
+          child: GestureDetector(
+            onTap: () => setState(() => _selectedSide = side),
+            child: Container(
+              margin: const EdgeInsets.only(right: 8),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                gradient: isSelected
+                    ? LinearGradient(colors: [Colors.purple[400]!, Colors.purple[300]!])
+                    : null,
+                color: isSelected ? null : Colors.grey[100],
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: isSelected ? Colors.purple[400]! : Colors.grey[200]!,
+                  width: isSelected ? 2 : 1,
+                ),
+              ),
+              child: Text(
+                side,
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: isSelected ? Colors.white : Colors.grey[700],
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _buildTextField(TextEditingController controller, String suffix, IconData icon, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.grey[50],
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.grey[200]!, width: 1),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: color, size: 20),
+          const SizedBox(width: 12),
+          Expanded(
+            child: TextField(
+              controller: controller,
+              keyboardType: TextInputType.number,
+              decoration: InputDecoration(
+                border: InputBorder.none,
+                hintText: '0',
+                suffixText: suffix,
+                suffixStyle: TextStyle(color: Colors.grey[600]),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSubmitButton(String text, Color color, IconData icon, VoidCallback onPressed) {
+    return SizedBox(
+      width: double.infinity,
+      child: ElevatedButton(
+        onPressed: _isSaving ? null : onPressed,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: color,
+          foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(vertical: 18),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          elevation: 0,
+        ),
+        child: _isSaving
+            ? const SizedBox(
+          height: 24,
+          width: 24,
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+          ),
+        )
+            : Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 24),
+            const SizedBox(width: 12),
             Text(
-              widget.type == ActivityType.sleep
-                  ? (isEndingSleep ? 'End Sleep Session' : (isEditing ? 'Edit Sleep' : 'Log Sleep Session'))
-                  : (isEditing ? 'Edit Feeding' : 'Log Feeding'),
-              style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
+              text,
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
             ),
-            const SizedBox(height: 20),
-            if (widget.type == ActivityType.sleep) ...[
-              // Sleep Form
-              if (!isEndingSleep) // Only show start time for new or historical edits
-                ListTile(
-                  title: const Text('Start Time'),
-                  subtitle: Text(_formatDateTime(_sleepStartTime)),
-                  trailing: const Icon(Icons.edit),
-                  onTap: () => _selectDateTime(context, _sleepStartTime, (dt) => _sleepStartTime = dt),
-                ),
-              ListTile(
-                title: isEndingSleep ? const Text('End Time (Now)') : const Text('End Time'),
-                subtitle: Text(_formatDateTime(_sleepEndTime)),
-                trailing: const Icon(Icons.edit),
-                onTap: () => _selectDateTime(context, _sleepEndTime, (dt) => _sleepEndTime = dt),
-              ),
-              TextField(
-                controller: _sleepNotesController,
-                decoration: const InputDecoration(
-                  labelText: 'Notes (e.g., in crib, short nap)',
-                  hintText: 'Optional notes',
-                  border: OutlineInputBorder(),
-                ),
-                maxLines: 2,
-              ),
-            ] else ...[
-              // Feeding Form
-              ListTile(
-                title: const Text('Feeding Time'),
-                subtitle: Text(_formatDateTime(_feedingTime)),
-                trailing: const Icon(Icons.edit),
-                onTap: () => _selectDateTime(context, _feedingTime, (dt) => _feedingTime = dt),
-              ),
-              DropdownButtonFormField<String>(
-                value: _selectedFeedingType,
-                decoration: const InputDecoration(labelText: 'Feeding Type', border: OutlineInputBorder()),
-                items: ['Bottle', 'Breast', 'Solid']
-                    .map((value) => DropdownMenuItem<String>(value: value, child: Text(value)))
-                    .toList(),
-                onChanged: (String? newValue) {
-                  setState(() {
-                    _selectedFeedingType = newValue!;
-                    if (newValue != 'Breast') _selectedSide = null; // Clear side if not breast
-                  });
-                },
-              ),
-              const SizedBox(height: 16),
-              if (_selectedFeedingType == 'Breast')
-                DropdownButtonFormField<String>(
-                  value: _selectedSide,
-                  decoration: const InputDecoration(labelText: 'Side', border: OutlineInputBorder()),
-                  items: [
-                    const DropdownMenuItem<String>(value: 'Left', child: Text('Left')),
-                    const DropdownMenuItem<String>(value: 'Right', child: Text('Right')),
-                    const DropdownMenuItem<String>(value: null, child: Text('Unknown/Both')),
-                  ],
-                  onChanged: (String? newValue) {
-                    setState(() => _selectedSide = newValue);
-                  },
-                ),
-              TextField(
-                controller: _amountController,
-                keyboardType: TextInputType.number,
-                decoration: InputDecoration(
-                  labelText: 'Amount (ml / g)',
-                  hintText: _selectedFeedingType == 'Solid' ? 'e.g., 50g' : 'e.g., 120ml',
-                  border: const OutlineInputBorder(),
-                ),
-              ),
-              TextField(
-                controller: _durationController,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: 'Duration (minutes)',
-                  hintText: 'e.g., 15',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-            ],
-            const SizedBox(height: 30),
-            _isSaving
-                ? const Center(child: CircularProgressIndicator())
-                : ElevatedButton(
-              onPressed: widget.type == ActivityType.sleep ? _saveSleep : _saveFeeding,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Theme.of(context).primaryColor,
-                foregroundColor: Colors.white,
-                minimumSize: const Size(double.infinity, 50),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-              child: Text(isEditing ? 'Update Entry' : (isEndingSleep ? 'End Sleep Now' : 'Save Entry')),
-            ),
-            const SizedBox(height: 16),
           ],
         ),
       ),

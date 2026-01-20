@@ -1,11 +1,10 @@
-// lib/screens/splash_screen.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:async';
 
 import 'login_screen.dart';
-import '../main.dart';
+import 'main_screen.dart'; // 🆕 Updated import
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -52,8 +51,9 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
 
     if (mounted) {
       if (user != null) {
+        // 🆕 Navigate to new MainScreen instead of MainAppShell
         Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (context) => const MainAppShell()),
+          MaterialPageRoute(builder: (context) => const MainScreen()),
         );
       } else {
         Navigator.of(context).pushReplacement(

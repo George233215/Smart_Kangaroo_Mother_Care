@@ -1,3 +1,4 @@
+// lib/screens/reminder_screen.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart' as fln;
 import 'package:provider/provider.dart';
@@ -15,7 +16,7 @@ class _ReminderScreenState extends State<ReminderScreen> {
   String _reminderType = 'Feeding';
   TimeOfDay? _selectedTime;
   List<fln.PendingNotificationRequest> _pendingReminders = [];
-  int _nextNotificationId = 0; // Simple way to generate unique IDs
+  int _nextNotificationId = 0;
 
   @override
   void initState() {
@@ -27,7 +28,6 @@ class _ReminderScreenState extends State<ReminderScreen> {
     final notificationService = Provider.of<NotificationService>(context, listen: false);
     final reminders = await notificationService.getPendingNotifications();
 
-    // Find the next available ID by checking existing ones
     if (reminders.isNotEmpty) {
       _nextNotificationId = reminders.map((r) => r.id).reduce((a, b) => a > b ? a : b) + 1;
     } else {
@@ -41,12 +41,23 @@ class _ReminderScreenState extends State<ReminderScreen> {
     }
   }
 
-  // --- UI Handlers ---
-
   Future<void> _selectTime(BuildContext context) async {
     final TimeOfDay? picked = await showTimePicker(
       context: context,
       initialTime: _selectedTime ?? TimeOfDay.now(),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: ColorScheme.light(
+              primary: Colors.orange[400]!,
+              onPrimary: Colors.white,
+              surface: Colors.white,
+              onSurface: Colors.black87,
+            ),
+          ),
+          child: child!,
+        );
+      },
     );
     if (picked != null && picked != _selectedTime) {
       setState(() {
@@ -59,24 +70,38 @@ class _ReminderScreenState extends State<ReminderScreen> {
     if (_formKey.currentState!.validate() && _selectedTime != null) {
       final notificationService = Provider.of<NotificationService>(context, listen: false);
 
-      // Schedule the reminder as a daily repeating alarm
       await notificationService.scheduleDailyNotification(
         id: _nextNotificationId,
         title: 'KMC Reminder: $_reminderType',
         body: 'Time to $_reminderType the baby!',
-        scheduledTime: _selectedTime!, // pass Flutter's TimeOfDay
+        scheduledTime: _selectedTime!,
         payload: _reminderType,
       );
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Scheduled $_reminderType reminder for ${_selectedTime!.format(context)} daily!')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('⏰ Reminder set for ${_selectedTime!.format(context)}'),
+            backgroundColor: Colors.green,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+        );
+      }
 
-      // Update the list and ID
+      setState(() {
+        _selectedTime = null;
+        _reminderType = 'Feeding';
+      });
       _loadPendingReminders();
     } else if (_selectedTime == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select a time.')),
+        SnackBar(
+          content: const Text('Please select a time first'),
+          backgroundColor: Colors.orange,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
       );
     }
   }
@@ -86,34 +111,47 @@ class _ReminderScreenState extends State<ReminderScreen> {
     await notificationService.cancelNotification(id);
     _loadPendingReminders();
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Reminder cancelled.')),
+      SnackBar(
+        content: const Text('Reminder cancelled'),
+        backgroundColor: Colors.red[400],
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
     );
-  }
-
-  // --- Widget Builders ---
-
-  String _formatReminderTitle(fln.PendingNotificationRequest request) {
-    if (request.title == null || request.body == null) return 'Unknown Reminder';
-    final type = request.title!.split(':').last.trim();
-    return '$type at ${request.payload}';
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text(
-          'Daily Reminders',
-          style: TextStyle(fontWeight: FontWeight.bold,color: Colors.white),
-        ),
-        backgroundColor: Colors.pink[400],
-        foregroundColor: Colors.white,
         elevation: 0,
+        backgroundColor: Colors.transparent,
         flexibleSpace: Container(
           decoration: BoxDecoration(
             gradient: LinearGradient(
-              colors: [Colors.pink[400]!, Colors.pink[300]!],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Colors.orange[400]!, Colors.amber[300]!],
             ),
+          ),
+        ),
+        leading: IconButton(
+          icon: Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(Icons.arrow_back, color: Colors.white),
+          ),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: const Text(
+          'Reminders',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
           ),
         ),
       ),
@@ -122,7 +160,7 @@ class _ReminderScreenState extends State<ReminderScreen> {
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [Colors.pink[50]!, Colors.white],
+            colors: [Colors.grey[50]!, Colors.white],
           ),
         ),
         child: SingleChildScrollView(
@@ -130,264 +168,273 @@ class _ReminderScreenState extends State<ReminderScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // Create Reminder Card
               Container(
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: Colors.orange[100]!, width: 1),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.pink.withOpacity(0.15),
+                      color: Colors.orange.withOpacity(0.1),
                       blurRadius: 15,
                       offset: const Offset(0, 5),
                     ),
                   ],
                 ),
-                child: Padding(
-                  padding: const EdgeInsets.all(20.0),
-                  child: Form(
-                    key: _formKey,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  colors: [Colors.pink[300]!, Colors.pink[200]!],
-                                ),
-                                borderRadius: BorderRadius.circular(12),
+                child: Column(
+                  children: [
+                    // Header
+                    Container(
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [Colors.orange[50]!, Colors.white],
+                        ),
+                        borderRadius: const BorderRadius.only(
+                          topLeft: Radius.circular(20),
+                          topRight: Radius.circular(20),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: [Colors.orange[400]!, Colors.orange[300]!],
                               ),
-                              child: const Icon(Icons.alarm_add, color: Colors.white, size: 26),
+                              borderRadius: BorderRadius.circular(14),
                             ),
-                            const SizedBox(width: 14),
+                            child: const Icon(Icons.alarm_add, color: Colors.white, size: 28),
+                          ),
+                          const SizedBox(width: 16),
+                          const Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'New Reminder',
+                                  style: TextStyle(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.black87,
+                                  ),
+                                ),
+                                SizedBox(height: 4),
+                                Text(
+                                  'Set up daily notifications',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: Colors.grey,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    // Form
+                    Padding(
+                      padding: const EdgeInsets.all(20),
+                      child: Form(
+                        key: _formKey,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Reminder Type
                             const Text(
-                              'New Daily Alarm',
+                              'Reminder Type',
                               style: TextStyle(
-                                fontSize: 22,
+                                fontSize: 14,
                                 fontWeight: FontWeight.bold,
-                                color: Colors.pink,
+                                color: Colors.black87,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 16),
+                              decoration: BoxDecoration(
+                                color: Colors.grey[50],
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: Colors.grey[200]!, width: 1),
+                              ),
+                              child: DropdownButtonHideUnderline(
+                                child: DropdownButton<String>(
+                                  value: _reminderType,
+                                  isExpanded: true,
+                                  icon: Icon(Icons.arrow_drop_down, color: Colors.orange[400]),
+                                  items: ['Feeding', 'Diaper Change', 'Medicine', 'Check Temperature']
+                                      .map((String value) {
+                                    return DropdownMenuItem<String>(
+                                      value: value,
+                                      child: Row(
+                                        children: [
+                                          Icon(_getReminderIcon(value), size: 20, color: Colors.orange[400]),
+                                          const SizedBox(width: 12),
+                                          Text(value),
+                                        ],
+                                      ),
+                                    );
+                                  }).toList(),
+                                  onChanged: (String? newValue) {
+                                    setState(() {
+                                      _reminderType = newValue!;
+                                    });
+                                  },
+                                ),
+                              ),
+                            ),
+
+                            const SizedBox(height: 20),
+
+                            // Time Selection
+                            const Text(
+                              'Time',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.black87,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            InkWell(
+                              onTap: () => _selectTime(context),
+                              child: Container(
+                                padding: const EdgeInsets.all(18),
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    colors: [Colors.orange[50]!, Colors.amber[50]!],
+                                  ),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(color: Colors.orange[200]!, width: 1),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.all(10),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white,
+                                        borderRadius: BorderRadius.circular(10),
+                                      ),
+                                      child: Icon(Icons.access_time, color: Colors.orange[400], size: 24),
+                                    ),
+                                    const SizedBox(width: 16),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            _selectedTime == null ? 'Select Time' : 'Alarm Time',
+                                            style: TextStyle(
+                                              color: Colors.grey[600],
+                                              fontSize: 12,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            _selectedTime == null
+                                                ? 'Tap to choose'
+                                                : '${_selectedTime!.format(context)} (Daily)',
+                                            style: TextStyle(
+                                              fontSize: 17,
+                                              fontWeight: FontWeight.bold,
+                                              color: _selectedTime == null ? Colors.grey : Colors.orange[700],
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey[400]),
+                                  ],
+                                ),
+                              ),
+                            ),
+
+                            const SizedBox(height: 24),
+
+                            // Submit Button
+                            SizedBox(
+                              width: double.infinity,
+                              child: ElevatedButton(
+                                onPressed: _scheduleReminder,
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.orange[400],
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(vertical: 16),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(14),
+                                  ),
+                                  elevation: 0,
+                                ),
+                                child: const Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(Icons.alarm_on, size: 22),
+                                    SizedBox(width: 12),
+                                    Text(
+                                      'Create Reminder',
+                                      style: TextStyle(
+                                        fontSize: 17,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
                             ),
                           ],
                         ),
-                        const SizedBox(height: 24),
-
-                        Container(
-                          decoration: BoxDecoration(
-                            color: Colors.pink[50],
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: DropdownButtonFormField<String>(
-                            value: _reminderType,
-                            decoration: InputDecoration(
-                              labelText: 'Reminder For',
-                              labelStyle: TextStyle(color: Colors.pink[700]),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12),
-                                borderSide: BorderSide.none,
-                              ),
-                              filled: true,
-                              fillColor: Colors.transparent,
-                              prefixIcon: Icon(Icons.category, color: Colors.pink[400]),
-                            ),
-                            items: ['Feeding', 'Medication']
-                                .map((label) => DropdownMenuItem(
-                              value: label,
-                              child: Text(label),
-                            ))
-                                .toList(),
-                            onChanged: (value) {
-                              setState(() {
-                                _reminderType = value!;
-                              });
-                            },
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-
-                        InkWell(
-                          onTap: () => _selectTime(context),
-                          child: Container(
-                            padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(
-                              color: Colors.pink[50],
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: Colors.pink[200]!, width: 1),
-                            ),
-                            child: Row(
-                              children: [
-                                Icon(Icons.access_time, color: Colors.pink[400], size: 26),
-                                const SizedBox(width: 16),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        'Alarm Time',
-                                        style: TextStyle(
-                                          color: Colors.grey[600],
-                                          fontSize: 13,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 2),
-                                      Text(
-                                        _selectedTime == null
-                                            ? 'Tap to select time'
-                                            : '${_selectedTime!.format(context)} (Daily Repeat)',
-                                        style: const TextStyle(
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.bold,
-                                          color: Colors.pink,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                Icon(Icons.arrow_forward_ios, size: 16, color: Colors.pink[300]),
-                              ],
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 24),
-
-                        SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton(
-                            onPressed: _scheduleReminder,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.pink[400],
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(vertical: 16),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              elevation: 3,
-                            ),
-                            child: const Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(Icons.alarm_on, size: 22),
-                                SizedBox(width: 10),
-                                Text(
-                                  'Schedule Reminder',
-                                  style: TextStyle(
-                                    fontSize: 17,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ],
+                      ),
                     ),
-                  ),
+                  ],
                 ),
               ),
+
               const SizedBox(height: 32),
 
-              const Text(
-                'Active Alarms',
-                style: TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.pink,
-                ),
+              // Active Reminders Section
+              Row(
+                children: [
+                  const Text(
+                    'Active Reminders',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black87,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.orange[100],
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      '${_pendingReminders.length}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.orange[700],
+                      ),
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 16),
 
               _pendingReminders.isEmpty
-                  ? Container(
-                padding: const EdgeInsets.all(32),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Center(
-                  child: Column(
-                    children: [
-                      Icon(Icons.alarm_off, size: 60, color: Colors.pink[200]),
-                      const SizedBox(height: 12),
-                      const Text(
-                        'No active reminders set',
-                        style: TextStyle(fontSize: 16, color: Colors.grey),
-                      ),
-                    ],
-                  ),
-                ),
-              )
+                  ? _buildEmptyState()
                   : ListView.builder(
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
                 itemCount: _pendingReminders.length,
                 itemBuilder: (context, index) {
                   final reminder = _pendingReminders[index];
-
-                  return Container(
-                    margin: const EdgeInsets.only(bottom: 12),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(16),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.pink.withOpacity(0.1),
-                          blurRadius: 8,
-                          offset: const Offset(0, 3),
-                        ),
-                      ],
-                    ),
-                    child: ListTile(
-                      contentPadding: const EdgeInsets.all(16),
-                      leading: Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [Colors.pink[300]!, Colors.pink[200]!],
-                          ),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: const Icon(Icons.alarm, color: Colors.white, size: 26),
-                      ),
-                      title: Text(
-                        reminder.title ?? 'Reminder',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                        ),
-                      ),
-                      subtitle: Padding(
-                        padding: const EdgeInsets.only(top: 6.0),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: Colors.pink[50],
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: const Text(
-                            'Daily Repeat',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.pink,
-                            ),
-                          ),
-                        ),
-                      ),
-                      trailing: IconButton(
-                        icon: Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: Colors.red[50],
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: const Icon(Icons.delete, color: Colors.red, size: 22),
-                        ),
-                        onPressed: () => _cancelReminder(reminder.id),
-                      ),
-                    ),
-                  );
+                  return _buildReminderCard(reminder);
                 },
               ),
             ],
@@ -395,5 +442,168 @@ class _ReminderScreenState extends State<ReminderScreen> {
         ),
       ),
     );
+  }
+
+  Widget _buildEmptyState() {
+    return Container(
+      padding: const EdgeInsets.all(40),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Center(
+        child: Column(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: Colors.orange[50],
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.alarm_off,
+                size: 60,
+                color: Colors.orange[300],
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'No Active Reminders',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Colors.black87,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Create your first reminder above',
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.grey[600],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildReminderCard(fln.PendingNotificationRequest reminder) {
+    final type = reminder.title?.split(':').last.trim() ?? 'Reminder';
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.grey[200]!, width: 1),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.08),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: ListTile(
+        contentPadding: const EdgeInsets.all(16),
+        leading: Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Colors.orange[400]!, Colors.orange[300]!],
+            ),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Icon(_getReminderIcon(type), color: Colors.white, size: 24),
+        ),
+        title: Text(
+          reminder.title ?? 'Reminder',
+          style: const TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: 16,
+          ),
+        ),
+        subtitle: Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: Colors.orange[50],
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.repeat, size: 14, color: Colors.orange[700]),
+                const SizedBox(width: 6),
+                Text(
+                  'Daily at ${reminder.payload}',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.orange[700],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        trailing: IconButton(
+          icon: Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: Colors.red[50],
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Icon(Icons.delete_outline, color: Colors.red, size: 22),
+          ),
+          onPressed: () => _showDeleteConfirmation(reminder.id),
+        ),
+      ),
+    );
+  }
+
+  void _showDeleteConfirmation(int id) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text(
+          'Delete Reminder?',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        content: const Text('This reminder will be permanently removed.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Cancel', style: TextStyle(color: Colors.grey[600])),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _cancelReminder(id);
+            },
+            child: const Text('Delete', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  IconData _getReminderIcon(String type) {
+    switch (type.toLowerCase()) {
+      case 'feeding':
+        return Icons.local_dining;
+      case 'diaper change':
+        return Icons.baby_changing_station;
+      case 'medicine':
+        return Icons.medication;
+      case 'check temperature':
+        return Icons.thermostat;
+      default:
+        return Icons.alarm;
+    }
   }
 }

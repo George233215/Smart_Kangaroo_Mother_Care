@@ -45,17 +45,17 @@ class DataService with ChangeNotifier {
   List<SleepData> get sleepEntries => _sleepEntries;
   List<FeedingData> get feedingEntries => _feedingEntries;
 
-  // Streams for UI to listen to
-  StreamController<BabyData?> _babyDataController = StreamController<BabyData?>.broadcast();
+  // Streams for UI to listen to (sync: true ensures immediate delivery of first event)
+  final StreamController<BabyData?> _babyDataController = StreamController<BabyData?>.broadcast(sync: true);
   Stream<BabyData?> get babyDataStream => _babyDataController.stream;
 
-  StreamController<List<AlertData>> _alertsController = StreamController<List<AlertData>>.broadcast();
+  final StreamController<List<AlertData>> _alertsController = StreamController<List<AlertData>>.broadcast(sync: true);
   Stream<List<AlertData>> get alertsStream => _alertsController.stream;
 
-  StreamController<List<SleepData>> _sleepDataController = StreamController<List<SleepData>>.broadcast();
+  final StreamController<List<SleepData>> _sleepDataController = StreamController<List<SleepData>>.broadcast(sync: true);
   Stream<List<SleepData>> get sleepDataStream => _sleepDataController.stream;
 
-  StreamController<List<FeedingData>> _feedingDataController = StreamController<List<FeedingData>>.broadcast();
+  final StreamController<List<FeedingData>> _feedingDataController = StreamController<List<FeedingData>>.broadcast(sync: true);
   Stream<List<FeedingData>> get feedingDataStream => _feedingDataController.stream;
 
   // Helper to safely check if the current user ID is valid for Firestore
@@ -436,8 +436,8 @@ class DataService with ChangeNotifier {
     if (_mockDataTimer != null && _mockDataTimer!.isActive) {
       return;
     }
-    print("Starting mock data generation (only logging to Firestore)...");
-    _mockDataTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
+    print("Starting mock data generation (updating RTDB and logging to Firestore)...");
+    _mockDataTimer = Timer.periodic(const Duration(seconds: 5), (timer) async {
       int heartRate = 100 + _random.nextInt(61);
       if (_random.nextDouble() < 0.1) {
         heartRate = _random.nextBool() ? (70 + _random.nextInt(20)) : (170 + _random.nextInt(20));
@@ -470,11 +470,23 @@ class DataService with ChangeNotifier {
         oxygenSaturation: oxygenSaturation,
       );
 
-      // Log the full event to Firestore
+      // IMPORTANT: Update RTDB first so the stream picks it up and updates UI
+      try {
+        await _vitalsRef().set({
+          'heartRate': heartRate,
+          'temperature': temperature,
+          'oxygenSaturation': oxygenSaturation,
+          'timestamp': ServerValue.timestamp,
+        });
+      } catch (e) {
+        print("Error updating RTDB with mock data: $e");
+      }
+
+      // Log the full event to Firestore for history
       addBabyData(newBabyData);
 
-      // We manually call the alert check since this is a mock. The RTDB stream handles real data.
-      _generateAlertsFromVitals(newBabyData);
+      // Note: We don't need to manually call _generateAlertsFromVitals here
+      // because the RTDB stream listener will pick up the change and call it
     });
   }
 
