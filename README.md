@@ -86,20 +86,5 @@ Alerts are delivered through mobile notifications with sound and vibration.
 - Children with abnormal readings are highlighted automatically
 - Suitable for hospitals, neonatal units, daycare centers, and home use
 
----
-
-## 👤 Author
-
-**George Chamveka**  
-Bachelor of Science in Business and Information Technology  
-Malawi University of Science and Technology (MUST)
-
----
-
-## 📄 License
-
-This project is developed for **academic and educational purposes**.  
-All rights reserved © 2025 **George Chamveka**.
-
 
 
